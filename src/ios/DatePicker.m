@@ -16,10 +16,11 @@
 @interface DatePicker ()
 
 @property (nonatomic) BOOL isVisible;
-@property (nonatomic) UIActionSheet* datePickerSheet;
 @property (nonatomic) UIDatePicker* datePicker;
 @property (nonatomic) UIPopoverController *datePickerPopover;
 
+@property (nonatomic) UIView *popupView;
+@property (nonatomic) UIView *backgroundView;
 @end
 
 @implementation DatePicker
@@ -27,7 +28,7 @@
 #pragma mark - UIDatePicker
 
 - (void)show:(CDVInvokedUrlCommand*)command {
-  NSMutableDictionary *options = [command argumentAtIndex:0];
+    NSMutableDictionary *options = [command argumentAtIndex:0];
   if (UI_USER_INTERFACE_IDIOM() == UIUserInterfaceIdiomPhone) {
     [self showForPhone: options];
   } else {
@@ -37,7 +38,7 @@
 
 - (BOOL)showForPhone:(NSMutableDictionary *)options {
   if(!self.isVisible){
-    self.datePickerSheet = [self createActionSheet:options];
+    [self createViewForActionSheet:options];
     self.isVisible = TRUE;
   }
   return true;
@@ -53,7 +54,16 @@
 
 - (void)hide {
     if (UI_USER_INTERFACE_IDIOM() == UIUserInterfaceIdiomPhone) {
-        [self.datePickerSheet dismissWithClickedButtonIndex:0 animated:YES];
+        [UIView animateWithDuration:.2 animations:^{
+            self.popupView.alpha = 0.0;
+            self.backgroundView.alpha = 0.0;
+        } completion:^(BOOL finished) {
+            [self.backgroundView removeFromSuperview];
+            [self.popupView removeFromSuperview];
+            self.popupView = nil;
+            self.backgroundView = nil;
+            self.isVisible = FALSE;
+        }];
     } else {
         [self.datePickerPopover dismissPopoverAnimated:YES];
     }
@@ -82,18 +92,6 @@
   [super writeJavascript:jsCallback];
 }
 
-
-#pragma mark - UIActionSheetDelegate methods
-
-- (void)actionSheet:(UIActionSheet *)actionSheet willDismissWithButtonIndex:(NSInteger)buttonIndex {
-
-}
-
-- (void)actionSheet:(UIActionSheet *)actionSheet didDismissWithButtonIndex:(NSInteger)buttonIndex {
-    self.isVisible = FALSE;
-}
-
-
 #pragma mark - UIPopoverControllerDelegate methods
 
 - (void)popoverControllerDidDismissPopover:(UIPopoverController *)popoverController {
@@ -102,31 +100,49 @@
 
 #pragma mark - Factory methods
 
-- (UIActionSheet *)createActionSheet:(NSMutableDictionary *)options {
-  UIActionSheet *actionSheet = [[UIActionSheet alloc] initWithTitle:nil
-                                                        delegate:self cancelButtonTitle:nil
-                                                        destructiveButtonTitle:nil 
-                                                        otherButtonTitles:nil];
+- (void)createViewForActionSheet:(NSMutableDictionary *)options {
+    UIView *targetView = [[[[UIApplication sharedApplication] keyWindow] subviews] lastObject];//self.webView.superview
 
-  [actionSheet setActionSheetStyle:UIActionSheetStyleBlackTranslucent];
-  // date picker
-  CGRect frame = CGRectMake(0, 40, 0, 0);
-  if(!self.datePicker){
-    self.datePicker = [self createDatePicker: options frame:frame];
-  } 
-  [self updateDatePicker:options];
-  [actionSheet addSubview: self.datePicker];
-  // cancel button
-  UISegmentedControl *cancelButton = [self createCancelButton:options];
-  [actionSheet addSubview:cancelButton];
-  // done button
-  UISegmentedControl *doneButton = [self createDoneButton:options];    
-  [actionSheet addSubview:doneButton];
-  // show UIActionSheet
-  [actionSheet showInView:self.webView.superview];
-  [actionSheet setBounds:CGRectMake(0, 0, 320, 485)];
+    self.datePicker = [self createDatePicker:options frame:CGRectMake(0, 44, 0, 0)];
+    [self updateDatePicker:options];
 
-  return actionSheet;
+    CGFloat y = targetView.frame.size.height -  CGRectGetMaxY(self.datePicker.frame);
+    self.popupView = [[UIView alloc] initWithFrame:(CGRect){0, y, targetView.frame.size.width, CGRectGetMaxY(self.datePicker.frame)}];
+    self.backgroundView = [[UIView alloc] initWithFrame:CGRectZero];
+    self.backgroundView.backgroundColor = [UIColor colorWithWhite:0 alpha:0.6];
+    self.popupView.backgroundColor = [UIColor whiteColor];
+    [self.popupView addSubview:self.datePicker];
+
+    if (NSFoundationVersionNumber > NSFoundationVersionNumber_iOS_6_1) {
+        UIBarButtonItem * cancelButton = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemCancel target:self action:@selector(cancelAction:)];
+        UIBarButtonItem * flexibleSpace = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemFlexibleSpace target:nil action:NULL];
+        UIBarButtonItem * doneButton = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemDone target:self action:@selector(doneAction:)];
+        
+        UIToolbar *toolBar = [[UIToolbar alloc] initWithFrame:CGRectMake(0, 0, targetView.frame.size.width, 44)];
+        
+        NSArray * barButtons = @[cancelButton,flexibleSpace,doneButton];
+        [toolBar setBarStyle:UIBarStyleBlackOpaque];
+        [toolBar setItems:barButtons];
+        
+        [self.popupView addSubview:toolBar];
+    } else {
+        UISegmentedControl *cancelButton = [self createCancelButton:options];
+        [self.popupView addSubview:cancelButton];
+        // done button
+        UISegmentedControl *doneButton = [self createDoneButton:options];
+        [self.popupView addSubview:doneButton];
+    }
+
+    self.backgroundView.alpha = 0.0;
+    self.backgroundView.frame = targetView.frame;
+    [targetView addSubview:self.backgroundView];
+    [targetView addSubview:self.popupView];
+
+    self.popupView.frame = (CGRect){0, targetView.frame.size.height, self.popupView.frame.size};
+    [UIView animateWithDuration:.2 animations:^{
+        self.backgroundView.alpha = 1.0;
+        self.popupView.frame = (CGRect){0, y, self.popupView.frame.size};
+    } completion:nil];
 }
 
 - (UIPopoverController *)createPopover:(NSMutableDictionary *)options {
@@ -159,7 +175,10 @@
 }
 
 - (UIDatePicker *)createDatePicker:(NSMutableDictionary *)options frame:(CGRect)frame { 
-  UIDatePicker *datePicker = [[UIDatePicker alloc] initWithFrame:frame];      
+  UIDatePicker *datePicker = [[UIDatePicker alloc] initWithFrame:frame];   
+  if (NSFoundationVersionNumber > NSFoundationVersionNumber_iOS_6_1) {
+    datePicker.backgroundColor = [UIColor whiteColor];
+  }   
   return datePicker;
 }
 
@@ -196,7 +215,7 @@
     self.datePicker.maximumDate = [formatter dateFromString:maxDateString];
   }
     
-  self.datePicker.date = [formatter dateFromString:dateString];
+    self.datePicker.date = [formatter dateFromString:dateString];
     
   if ([mode isEqualToString:@"date"]) {
     self.datePicker.datePickerMode = UIDatePickerModeDate;
