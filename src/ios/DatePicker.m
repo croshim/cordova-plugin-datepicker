@@ -152,11 +152,10 @@
   UIView *datePickerView = [[UIView alloc] initWithFrame:CGRectMake(0, 0, pickerViewWidth, pickerViewHeight)];
 
   CGRect frame = CGRectMake(0, 0, 0, 0);
-  if(!self.datePicker){
-    self.datePicker = [self createDatePicker:options frame:frame];
-    [self.datePicker addTarget:self action:@selector(dateChangedAction:) forControlEvents:UIControlEventValueChanged];    
-  }
-  [self updateDatePicker:options]; 
+  self.datePicker = [self createDatePicker:options frame:frame];
+  [self.datePicker addTarget:self action:@selector(dateChangedAction:) forControlEvents:UIControlEventValueChanged];
+
+  [self updateDatePicker:options];
   [datePickerView addSubview:self.datePicker];
 
   UIViewController *datePickerViewController = [[UIViewController alloc]init];
